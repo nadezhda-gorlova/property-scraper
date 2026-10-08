@@ -32,26 +32,20 @@ class GoogleSheetSaver():
             print(trace)
             return False
 
-    def save_data(self, data, spreadsheet_id):
+    def save_data(self, data, spreadsheet_id, sheet_name):
         """ Prepare data and save """
         print("Saving data to google spread sheet")
         try:
-            # Prepare data 
             keys = list(data[0].keys())
-            values = []
-            for item in data:
-                data_list_item = list(item.values())
-                values.append(data_list_item)
-            
-            body = {
-                "valueInputOption": "USER_ENTERED",
-                "data": [
-                    {"range": "Sheet1!A1", "values": [keys]},
-                    {"range": "Sheet1!A2", "values": values},
-                ],
-            }
-            # Save to sheet
-            self.sheets.values().batchUpdate(spreadsheetId=spreadsheet_id, body=body).execute()
+            values = [list(item.values()) for item in data]
+
+            self.sheets.values().append(
+                spreadsheetId=spreadsheet_id,
+                range=sheet_name+"!A1",
+                valueInputOption="RAW",
+                insertDataOption="INSERT_ROWS",
+                body={"values": values},
+            ).execute()
             return True
         except Exception as e:
             trace = traceback.format_exc()
@@ -60,10 +54,10 @@ class GoogleSheetSaver():
             return False
 
 
-    def save(self, data, spreadsheet_id):
+    def save(self, data, spreadsheet_id, sheet_name):
         """ Save data to google spreadsheet """
         connect_result = self.connect()
         if connect_result:
-            result = self.save_data(data, spreadsheet_id)
+            result = self.save_data(data, spreadsheet_id, sheet_name)
             if result:
                 print("Done!")

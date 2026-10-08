@@ -7,74 +7,77 @@ import re
 
 class ImovirtualParserJob():
         
-    async def parse_post(self, page, post_link):
+    async def parse_post(self, post_link, context):
         """ Parse post item: go to post page, collect data, go back """
         try:
             post_data = {}
-            await post_link.scroll_into_view_if_needed()
-            await post_link.click()
-            await page.wait_for_timeout(2_000)
             
-            post_data['title'] = await page.locator('[data-sentry-element="Title"]').nth(0).inner_text()
+            page_post = await context.new_page()
+            href = await post_link.get_attribute('href')
+            await page_post.goto('https://www.imovirtual.com' + href)
+            await page_post.wait_for_timeout(2_000)
+            
+            post_data['title'] = await page_post.locator('[data-sentry-element="Title"]').nth(0).inner_text()
             print(f"Parsing post: {post_data['title']}")
-            post_data['url'] = page.url
-            price = await page.get_by_label("Price").first.inner_text()
+            post_data['url'] = page_post.url
+            price = await page_post.get_by_label("Price").first.inner_text()
             post_data['price'] = price.replace('\xa0', '')
-            post_data['location'] = await page.locator('[data-sentry-component="MapLink"]').inner_text()
-            grids = page.locator('[data-sentry-element="ItemGridContainer"]')
-            area = await grids.filter(has_text="Area").all()
-            if len(area):
-                area_text = await area[0].locator('div').nth(1).inner_text()
-                post_data['area'] = area_text.replace('\xa0', '')
-            else:
-                post_data['area'] = ""
+            location = await page_post.locator('[data-sentry-component="MapLink"]').all()
+            if len(location):
+                post_data['location'] = await page_post.locator('[data-sentry-component="MapLink"]').inner_text()
+                grids = page_post.locator('[data-sentry-element="ItemGridContainer"]')
+                area = await grids.filter(has_text="Area").all()
+                if len(area):
+                    area_text = await area[0].locator('div').nth(1).inner_text()
+                    post_data['area'] = area_text.replace('\xa0', '')
+                else:
+                    post_data['area'] = ""
 
-            typology = await grids.filter(has_text="Typology").all()
-            if len(typology):
-                post_data['typology'] = await typology[0].locator('div').nth(1).inner_text()
-            else:
-                post_data['typology'] = ""
+                typology = await grids.filter(has_text="Typology").all()
+                if len(typology):
+                    post_data['typology'] = await typology[0].locator('div').nth(1).inner_text()
+                else:
+                    post_data['typology'] = ""
 
-            bath = await grids.filter(has_text="Number of bathrooms").all()
-            if len(bath):
-                post_data['bath'] = await bath[0].locator('div').nth(1).inner_text()
-            else:
-                post_data['bath'] = ""
+                bath = await grids.filter(has_text="Number of bathrooms").all()
+                if len(bath):
+                    post_data['bath'] = await bath[0].locator('div').nth(1).inner_text()
+                else:
+                    post_data['bath'] = ""
 
-            floor = await grids.filter(has_text="Floor").all()
-            if len(floor):
-                post_data['floor'] = await floor[0].locator('div').nth(1).inner_text()
-            else:
-                post_data['floor'] = ""
+                floor = await grids.filter(has_text="Floor").all()
+                if len(floor):
+                    post_data['floor'] = await floor[0].locator('div').nth(1).inner_text()
+                else:
+                    post_data['floor'] = ""
 
-            post_data['description'] = await page.locator('[data-sentry-element="DescriptionWrapper"]').nth(0).inner_text()
-            
-            last_updated = await page.locator('p').filter(has_text="Last update:").inner_text()
-            post_data['last_updated'] = last_updated.replace('Last update: ', '')
-            
-            go_back = await page.locator('[data-cy="breadcrumb-go-back-button"]').all()
-            if len(go_back):
-                await go_back[0].click()
-                await page.wait_for_timeout(1_000)
-            return post_data
+                post_data['description'] = await page_post.locator('[data-sentry-element="DescriptionWrapper"]').nth(0).inner_text()
+                
+                last_updated = await page_post.locator('p').filter(has_text="Last update:").inner_text()
+                post_data['last_updated'] = last_updated.replace('Last update: ', '')
+                # print(post_data)
+                await page_post.close()
+                return post_data
+            else:
+                return None
         except Exception as e:
             trace = traceback.format_exc() 
             print("Error while parsing post: ")
             print(trace)
-            await page.screenshot(path="err_post.png", full_page=True)
-            return None
-        
+            await page_post.screenshot(path="err_post.png", full_page=True)
+            return None 
 
-    async def parse_list(self, page, list):
+    async def parse_list(self, page, list, context):
         """ Parse list with posts """
         posts = []
         try:
             items = await list.locator('li').filter(visible=True).all()
             for item in items:
-                link = item.locator('[data-cy="listing-item-link"]')
-                post = await self.parse_post(page, link)
-                if post is not None:
-                    posts.append(post)
+                link = await item.locator('[data-cy="listing-item-link"]').all()
+                if len(link):
+                    post = await self.parse_post(link[0], context)
+                    if post is not None:
+                        posts.append(post)
             return posts
         except Exception as e:
             trace = traceback.format_exc()
@@ -83,7 +86,7 @@ class ImovirtualParserJob():
             await page.screenshot(path="err_list.png", full_page=True)
             return posts
         
-    async def parse_target_page(self, page):
+    async def parse_target_page(self, page, context, callback):
         """ Parse target page with pagination """
         posts = []
         try:
@@ -97,10 +100,12 @@ class ImovirtualParserJob():
                     pages = await pagination[0].locator('li').all()
                     last_page = await pages[-2].inner_text()
                     page_count = int(last_page)
+                    # page_count = 2
                     print(f"Pages: {page_count}")
                     for i in range (0, page_count - 1):
                         houses_list = await page.locator('[data-cy="search.listing.organic"]').all()
-                        posts += await self.parse_list(page, houses_list[0])
+                        posts = await self.parse_list(page, houses_list[0], context)
+                        await callback(posts)
                         next_page = await page.get_by_label("Go to next Page").all()
                         if len(next_page):
                             await next_page[0].click()
@@ -110,8 +115,8 @@ class ImovirtualParserJob():
                 else:
                     # Parse only one page
                     print(f"Pages: 1")
-                    posts += await self.parse_list(page, houses_list[0])
-            return posts
+                    posts = await self.parse_list(page, houses_list[0], context)
+                    await callback(posts)
         except Exception as e:
             trace = traceback.format_exc()
             print("Error while parsing target page: ")
@@ -198,13 +203,13 @@ class ImovirtualParserJob():
             result_target = await self.go_to_target_page(page, type, home_type, location)
             if result_target:
                 # Parse posts
-                result = await self.parse_target_page(page)
-                # Deduplicate data
-                data_set = set()
-                unique_result = []
-                for item in result:
-                    if item['url'] not in data_set:
-                        data_set.add(item['url'])
-                        unique_result.append(item)
-                # Return results
-                await callback(unique_result)
+                await self.parse_target_page(page, context, callback)
+                # # Deduplicate data
+                # data_set = set()
+                # unique_result = []
+                # for item in result:
+                #     if item['url'] not in data_set:
+                #         data_set.add(item['url'])
+                #         unique_result.append(item)
+                # # Return results
+                # await callback(unique_result)

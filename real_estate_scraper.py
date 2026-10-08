@@ -14,7 +14,7 @@ class RealEstateScraperJob():
         if self.export_type and self.export_type == 'google':
             # Save to google spreadsheet
             sheet = GoogleSheetSaver()
-            sheet.save(data, self.spreadsheet_id)
+            sheet.save(data, self.spreadsheet_id, 'Sheet1')
         else:
             # Save to csv
             keys = list(data[0].keys())
